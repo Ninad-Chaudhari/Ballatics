@@ -11,6 +11,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 # ─── Configuration ─────────────────────────────────────────────────────────────
 TOTAL_BALLOONS = 1000
 WIND_API_BASE  = "https://a.windbornesystems.com/treasure"
@@ -35,6 +38,7 @@ Base.metadata.create_all(engine)
 # ─── Fetch & Insert Logic ─────────────────────────────────────────────────────
 def fetch_and_update():
     print(f"[{datetime.now()}] fetch_and_update() was called.")
+    logging.info(f"[{datetime.now()}] fetch_and_update() was called.")
     session = SessionLocal()
     now = datetime.now(timezone.utc)
     end_ts = now.replace(minute=0, second=0, microsecond=0)
@@ -43,6 +47,8 @@ def fetch_and_update():
     last_ts = session.query(func.max(BalloonData.timestamp)).scalar()
     print(f"Last timestamp called:{last_ts}")
     print(f"Current timestamp :{end_ts}")
+    logging.info(f"Last timestamp called:{last_ts}")
+    logging.info(f"Current timestamp :{end_ts}")
     if last_ts:
         if last_ts.tzinfo is None:
             last_ts = last_ts.replace(tzinfo=timezone.utc)
@@ -159,5 +165,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, use_reloader=False)
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)

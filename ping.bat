@@ -2,7 +2,7 @@
 setlocal
 
 :: Set the URL here
-set "URL=https://ballatics.onrender.com/health_check"
+set "URL=https://ballatics.onrender.com/run_fetch"
 
 :loop
 echo Fetching response from %URL% at %time%
