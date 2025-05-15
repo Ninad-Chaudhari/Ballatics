@@ -118,7 +118,22 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_and_update, 'cron', minute=0)
 scheduler.start()
 
-
+@app.route("/trajectory/<int:balloon_id>")
+def get_trajectory(balloon_id):
+    session = SessionLocal()
+    recs = (
+        session.query(BalloonData)
+        .filter_by(balloon_index=balloon_id)
+        .order_by(BalloonData.timestamp)
+        .all()
+    )
+    traj = [
+        {"timestamp": r.timestamp.isoformat(), "lat": r.lat, "lon": r.lon, "alt": r.alt}
+        for r in recs
+    ]
+    session.close()
+    return jsonify({"balloon_index": balloon_id, "trajectory": traj})
+    
 @app.route("/")
 def index():
     return render_template("index.html")
