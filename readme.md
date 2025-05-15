@@ -3,7 +3,7 @@
 
 **Ballatics** is a real-time web application for visualizing high-altitude balloon trajectories, computing their speed and altitude, and overlaying wind direction vectors from atmospheric data.
 ### ***GO check it out :*** https://ballatics.onrender.com/
-(As it is hosted on render visiting it for the first time might take time as the pods get killed for 50s of inacivity)
+(As it is hosted on render visiting it for the first time might take time as the pods get killed for 50s of inactivity)
 
 ## 🌍 Features
 
