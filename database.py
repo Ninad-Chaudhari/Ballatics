@@ -34,12 +34,15 @@ Base.metadata.create_all(engine)
 
 # ─── Fetch & Insert Logic ─────────────────────────────────────────────────────
 def fetch_and_update():
+    print(f"[{datetime.now()}] fetch_and_update() was called.")
     session = SessionLocal()
     now = datetime.now(timezone.utc)
     end_ts = now.replace(minute=0, second=0, microsecond=0)
 
     # determine next timestamp to fetch
     last_ts = session.query(func.max(BalloonData.timestamp)).scalar()
+    print(f"Last timestamp called:{last_ts}")
+    print(f"Current timestamp :{end_ts}")
     if last_ts:
         if last_ts.tzinfo is None:
             last_ts = last_ts.replace(tzinfo=timezone.utc)
@@ -115,8 +118,7 @@ app = Flask(__name__)
 # schedule job every hour on the hour
 from sqlalchemy import func
 scheduler = BackgroundScheduler()
-scheduler.add_job(fetch_and_update, 'cron', minute=0)
-scheduler.start()
+scheduler.add_job(fetch_and_update, 'cron', id='updateDatabase', second=20)
 
 @app.route("/trajectory/<int:balloon_id>")
 def get_trajectory(balloon_id):
@@ -133,7 +135,7 @@ def get_trajectory(balloon_id):
     ]
     session.close()
     return jsonify({"balloon_index": balloon_id, "trajectory": traj})
-    
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -145,5 +147,12 @@ def health_check():
 
 if __name__ == "__main__":
     fetch_and_update()   # initial backfill/update
+
+    # Start scheduler AFTER fetch
+    scheduler.start()
+    print("Scheduled jobs:", scheduler.get_jobs())
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
