@@ -140,6 +140,11 @@ def get_trajectory(balloon_id):
 def index():
     return render_template("index.html")
 
+@app.route("/run_fetch", methods=["POST", "GET"])
+def run_fetch():
+    fetch_and_update()
+    return "OK", 200
+
 
 @app.route("/health_check")
 def health_check():
