@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Ballatics</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+  <style>
+    /* ─── Base ───────────────────────────────────────────────────────── */
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: #121212;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    a, button, select {
+      font-family: inherit;
+    }
+
+    /* ─── Header / Controls ──────────────────────────────────────────── */
+    #controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 20px;
+      background: #1e1e1e;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+    .app-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ff4081;
+    }
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    select {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      padding: 6px 8px;
+      border-radius: 4px;
+      outline: none;
+    }
+    .btn {
+      background: #ff4081;
+      border: none;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease;
+    }
+    .btn:hover {
+      background: #e73370;
+    }
+    #avgSpeed {
+      font-weight: 600;
+    }
+
+    /* ─── Map & Analysis ─────────────────────────────────────────────── */
+    #map { flex: 1; }
+    #analysis {
+      padding: 12px 20px;
+      background: #1e1e1e;
+    }
+    #altChart {
+      width: 100%;
+      max-height: 200px;
+    }
+
+    /* ─── Wind Arrow ───────────────────────────────────────────────── */
+    .wind-arrow {
+      font-size: 24px;
+      color: #ff4081;
+      text-shadow: 0 0 2px #121212;
+      line-height: 1;
+      transform-origin: center center;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <div class="controls-group">
+      <span class="app-title">Ballatics</span>
+      <label>
+        Balloon ID:
+        <select id="balloonSelect"></select>
+      </label>
+    </div>
+    <div class="controls-group">
+      <button class="btn" id="refreshBtn">🔄 Refresh Trajectory</button>
+      <button class="btn" id="windBtn">🌬️ Show Wind</button>
+      <div id="avgSpeed">Avg Speed: —</div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="analysis">
+    <canvas id="altChart"></canvas>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    const TOTAL_BALLOONS = 1000;
+
+    // Initialize map with a dark basemap
+    const map = L.map('map').setView([0,0],2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+      attribution:'© OpenStreetMap © CARTO'
+    }).addTo(map);
+
+    const trajectoryLayer = L.layerGroup().addTo(map);
+    const windLayer       = L.layerGroup().addTo(map);
+
+    const balloonSelect = document.getElementById('balloonSelect');
+    const refreshBtn    = document.getElementById('refreshBtn');
+    const windBtn       = document.getElementById('windBtn');
+    const avgSpeedDiv   = document.getElementById('avgSpeed');
+
+    // populate dropdown
+    for(let i=0; i<TOTAL_BALLOONS; i++){
+      const opt = document.createElement('option');
+      opt.value = i; opt.text = i;
+      balloonSelect.appendChild(opt);
+    }
+
+    // Chart.js altitude chart with dark styling
+    const ctx = document.getElementById('altChart').getContext('2d');
+    const altChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Altitude (m)',
+          data: [],
+          borderColor: '#ff4081',
+          backgroundColor: 'rgba(255,64,129,0.2)',
+          fill: true,
+          tension: 0.1
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { labels: { color: '#eee' } }
+        },
+        scales: {
+          x: {
+            title: { display:true, text:'Time (UTC)', color:'#eee' },
+            ticks: { color:'#ccc' },
+            grid: { color:'rgba(255,255,255,0.1)' }
+          },
+          y: {
+            title: { display:true, text:'Altitude (m)', color:'#eee' },
+            ticks: { color:'#ccc' },
+            grid: { color:'rgba(255,255,255,0.1)' }
+          }
+        }
+      }
+    });
+
+    // Haversine for km
+    function haversine([lat1,lon1],[lat2,lon2]){
+      const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+      const a = Math.sin(dLat/2)**2
+        + Math.cos(lat1*Math.PI/180)
+          * Math.cos(lat2*Math.PI/180)
+          * Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
+
+    let lastPoints = [];
+
+    // load & draw trajectory + avg speed + altitude
+    async function loadTrajectory(){
+      const res = await fetch(`/trajectory/${balloonSelect.value}`);
+      const js  = await res.json();
+      const pts = js.trajectory
+        .filter(p=>p.lat!=null && p.lon!=null)
+        .map(p=>({
+          lat:+p.lat, lon:+p.lon,
+          time:new Date(p.timestamp),
+          alt:p.alt!=null?+p.alt:null
+        }));
+      lastPoints = pts;
+
+      trajectoryLayer.clearLayers();
+      windLayer.clearLayers();
+      avgSpeedDiv.textContent = 'Avg Speed: —';
+      updateAltitudeChart([]);
+
+      if(!pts.length) return;
+
+      const latlngs = pts.map(o=>[o.lat,o.lon]);
+      L.polyline(latlngs,{color:'#ff4081',weight:3}).addTo(trajectoryLayer);
+      pts.forEach(o=>{
+        L.circleMarker([o.lat,o.lon],{
+          radius:5, fillColor:'#ff4081', color:'#121212',
+          weight:1, fillOpacity:0.9
+        })
+        .bindTooltip(o.time.toISOString())
+        .addTo(trajectoryLayer);
+      });
+      map.fitBounds(latlngs);
+
+      // average speed
+      let totalD=0, totalT=0;
+      for(let i=1;i<pts.length;i++){
+        const d = haversine([pts[i-1].lat,pts[i-1].lon],[pts[i].lat,pts[i].lon]);
+        const dt = (pts[i].time - pts[i-1].time)/3600000;
+        if(dt>0){ totalD+=d; totalT+=dt; }
+      }
+      if(totalT>0){
+        avgSpeedDiv.textContent = `Avg Speed: ${(totalD/totalT).toFixed(2)} km/h`;
+      }
+
+      updateAltitudeChart(pts);
+    }
+
+    function updateAltitudeChart(pts){
+      altChart.data.labels = pts.map(o=>o.time.toISOString().substr(11,5));
+      altChart.data.datasets[0].data = pts.map(o=>o.alt);
+      altChart.update();
+    }
+
+    // draw wind arrows along trajectory
+    async function drawWindArrow(lat, lon, isoTime){
+      const dt = new Date(isoTime),
+            Y = dt.getUTCFullYear(),
+            M = String(dt.getUTCMonth()+1).padStart(2,'0'),
+            D = String(dt.getUTCDate()).padStart(2,'0'),
+            H = String(dt.getUTCHours()).padStart(2,'0');
+      const date = `${Y}-${M}-${D}`, slot=`${date}T${H}:00`;
+      const url = 
+        `https://archive-api.open-meteo.com/v1/archive`+
+        `?latitude=${lat}&longitude=${lon}`+
+        `&start_date=${date}&end_date=${date}`+
+        `&hourly=winddirection_10m,wind_speed_10m`;
+
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error(`Wind API ${resp.status}`);
+      const json = await resp.json();
+      const idx  = json.hourly.time.indexOf(slot);
+      if(idx<0) return;
+
+      const dirFrom = json.hourly.winddirection_10m[idx];
+      const dirTo   = (dirFrom + 180) % 360;
+      const rad     = dirTo * Math.PI/180;
+      const len     = 0.2;
+      const dLat    = len * Math.cos(rad),
+            dLon    = len * Math.sin(rad);
+
+      // shaft
+      L.polyline([[lat,lon],[lat+dLat,lon+dLon]],{
+        color:'#ff4081', weight:2, opacity:0.8
+      }).addTo(windLayer);
+
+      // head
+      const html = `<div class="wind-arrow" style="transform: rotate(${dirFrom}deg)">&#10148;</div>`;
+      const icon = L.divIcon({html, iconSize:[24,24], iconAnchor:[12,12]});
+      L.marker([lat+dLat,lon+dLon],{icon}).addTo(windLayer);
+    }
+
+    // events
+    refreshBtn.addEventListener('click', loadTrajectory);
+    balloonSelect.addEventListener('change', loadTrajectory);
+
+    windBtn.addEventListener('click', async()=>{
+      if(!lastPoints.length){
+        return alert('Load a trajectory first');
+      }
+      windLayer.clearLayers();
+      for(const pt of lastPoints){
+        try { await drawWindArrow(pt.lat, pt.lon, pt.time.toISOString()); }
+        catch(e){ console.warn('Wind error', e); }
+      }
+    });
+
+    // initial load
+    loadTrajectory();
+  </script>
+</body>
+</html>
