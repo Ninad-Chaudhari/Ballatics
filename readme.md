@@ -1,5 +1,5 @@
 
-# 🎈 Ballatics – High-Altitude Balloon Trajectory Tracker
+# 🎈 Ballatics – High-Altitude Balloon Trajectory And Jetstream Tracker
 
 **Ballatics** is a real-time web application for visualizing high-altitude balloon trajectories, computing their speed and altitude, and overlaying wind direction vectors from atmospheric data.
 
