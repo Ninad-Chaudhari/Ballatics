@@ -1,7 +1,7 @@
 import re
 import json
 from datetime import datetime, timezone, timedelta
-
+import os
 import requests
 from flask import Flask, jsonify, render_template, request, abort
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -123,6 +123,12 @@ scheduler.start()
 def index():
     return render_template("index.html")
 
+
+@app.route("/health_check")
+def health_check():
+    return "App Deployed Successfully"
+
 if __name__ == "__main__":
     fetch_and_update()   # initial backfill/update
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
